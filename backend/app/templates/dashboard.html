@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Prompt Pilot{% endblock %}
+
+{% block content %}
+<h2>Dashboard</h2>
+<div id="message-container"></div>
+<p>Welcome, <span id="username-display">user</span>!</p>
+<p>This is your Prompt Pilot dashboard. From here, you can manage your prompts and API endpoints.</p>
+<ul>
+    <li><a href="/view/prompts">Manage Prompts (Prompt Studio)</a></li>
+    <li><a href="/view/endpoints">Manage API Endpoints</a></li>
+</ul>
+
+<p>Your User Details (from token):</p>
+<pre id="user-details"></pre>
+
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const token = getToken();
+        if (!token) {
+            window.location.href = '/view/login';
+            return; // Stop further execution if no token
+        }
+
+        // Fetch user details from /users/me
+        async function fetchUserDetails() {
+            try {
+                const userData = await makeApiCall('/users/me', 'GET');
+                document.getElementById('username-display').textContent = userData.username;
+                document.getElementById('user-details').textContent = JSON.stringify(userData, null, 2);
+            } catch (error) {
+                displayMessage('Failed to load user details. You might be logged out.');
+                // removeToken(); // Optionally force logout
+                // window.location.href = '/view/login';
+            }
+        }
+
+        fetchUserDetails();
+    });
+</script>
+{% endblock %}

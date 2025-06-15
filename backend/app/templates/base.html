@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Prompt Pilot{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}"> {# Example CSS link #}
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color: #333; }
+        header { background-color: #333; color: white; padding: 1em 0; text-align: center; }
+        nav { background-color: #444; padding: 0.5em; text-align: center; }
+        nav a { color: white; margin: 0 1em; text-decoration: none; }
+        nav a:hover { text-decoration: underline; }
+        .container { max-width: 960px; margin: 2em auto; padding: 1em; background-color: white; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .alert { padding: 1em; margin-bottom: 1em; border-radius: 4px; }
+        .alert-error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .alert-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        form label { display: block; margin-bottom: 0.5em; }
+        form input[type="text"], form input[type="email"], form input[type="password"] {
+            width: calc(100% - 22px); padding: 0.75em; margin-bottom: 1em; border: 1px solid #ccc; border-radius: 4px;
+        }
+        form button { background-color: #5cb85c; color: white; padding: 0.75em 1.5em; border: none; border-radius: 4px; cursor: pointer; font-size: 1em; }
+        form button:hover { background-color: #4cae4c; }
+        .auth-links { text-align: center; margin-top: 1em; }
+        .auth-links a { color: #007bff; text-decoration: none; }
+        .auth-links a:hover { text-decoration: underline; }
+        h1, h2 { text-align: center; }
+    </style>
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+    <header>
+        <h1>Prompt Pilot</h1>
+    </header>
+    <nav id="main-nav">
+        <!-- Nav links will be dynamically added by JS based on auth state -->
+    </nav>
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <script>
+        // Basic token handling and API interaction utilities
+        const TOKEN_KEY = 'promptPilotToken';
+
+        function saveToken(token) {
+            localStorage.setItem(TOKEN_KEY, token);
+        }
+
+        function getToken() {
+            return localStorage.getItem(TOKEN_KEY);
+        }
+
+        function removeToken() {
+            localStorage.removeItem(TOKEN_KEY);
+        }
+
+        async function makeApiCall(url, method = 'GET', body = null, headers = {}) {
+            const token = getToken();
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+            if (body && !(body instanceof FormData)) { // Do not set Content-Type for FormData
+                headers['Content-Type'] = 'application/json';
+            }
+
+            try {
+                const response = await fetch(url, {
+                    method,
+                    headers,
+                    body: (body && !(body instanceof FormData)) ? JSON.stringify(body) : body,
+                });
+                const responseData = await response.json();
+                if (!response.ok) {
+                    // Use detail from API response if available, otherwise generic message
+                    const errorMessage = responseData.detail || `HTTP error! status: ${response.status}`;
+                    throw new Error(errorMessage);
+                }
+                return responseData;
+            } catch (error) {
+                console.error('API call failed:', error);
+                throw error; // Re-throw to be caught by caller
+            }
+        }
+
+        function displayMessage(message, type = 'error', containerId = 'message-container') {
+            const container = document.getElementById(containerId);
+            if (container) {
+                container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            } else {
+                alert(message); // Fallback if no message container
+            }
+        }
+
+        function updateNav() {
+            const nav = document.getElementById('main-nav');
+            if (!nav) return;
+
+            const token = getToken();
+            if (token) {
+                nav.innerHTML = `
+                    <a href="/view/dashboard">Dashboard</a>
+                    <a href="#" id="logout-link">Logout</a>
+                `;
+                const logoutLink = document.getElementById('logout-link');
+                if (logoutLink) {
+                    logoutLink.addEventListener('click', function(event) {
+                        event.preventDefault();
+                        removeToken();
+                        window.location.href = '/view/login';
+                    });
+                }
+            } else {
+                nav.innerHTML = `
+                    <a href="/view/login">Login</a>
+                    <a href="/view/register">Register</a>
+                `;
+            }
+        }
+
+        // Call updateNav on page load
+        document.addEventListener('DOMContentLoaded', updateNav);
+
+    </script>
+    {% block scripts_extra %}{% endblock %}
+</body>
+</html>

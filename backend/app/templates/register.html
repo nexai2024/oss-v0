@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Register - Prompt Pilot{% endblock %}
+
+{% block content %}
+<h2>Register</h2>
+<div id="message-container"></div>
+<form id="register-form">
+    <div>
+        <label for="username">Username:</label>
+        <input type="text" id="username" name="username" required>
+    </div>
+    <div>
+        <label for="email">Email:</label>
+        <input type="email" id="email" name="email" required>
+    </div>
+    <div>
+        <label for="password">Password:</label>
+        <input type="password" id="password" name="password" required>
+    </div>
+    <button type="submit">Register</button>
+</form>
+<div class="auth-links">
+    <p>Already have an account? <a href="/view/login">Login here</a>.</p>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Redirect if already logged in
+        if (getToken()) {
+            window.location.href = '/view/dashboard';
+            return;
+        }
+
+        const registerForm = document.getElementById('register-form');
+        registerForm.addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const username = document.getElementById('username').value;
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                await makeApiCall('/auth/register', 'POST', { username, email, password });
+                displayMessage('Registration successful! Please <a href="/view/login">login</a>.', 'success');
+                registerForm.reset(); // Clear the form
+            } catch (error) {
+                 displayMessage(error.message || 'Registration failed. Please try again.');
+            }
+        });
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block title %}My Prompts - Prompt Pilot{% endblock %}
+
+{% block content %}
+<h2>My Prompts</h2>
+<div id="message-container"></div>
+<a href="/view/prompts/new" class="button-like">Create New Prompt</a>
+<table id="prompts-table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Description</th>
+            <th>Latest Version</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        <!-- Prompt rows will be inserted here by JavaScript -->
+    </tbody>
+</table>
+
+<!-- Modal for Execution -->
+<div id="execute-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <span class="close-button" onclick="closeModal('execute-modal')">&times;</span>
+        <h3>Execute Prompt: <span id="execute-prompt-name"></span></h3>
+        <input type="hidden" id="execute-prompt-id">
+        <div>
+            <label for="execute-version">Version (optional, defaults to latest):</label>
+            <input type="number" id="execute-version" placeholder="e.g., 1">
+        </div>
+        <div>
+            <label for="execute-variables">Variables (JSON format):</label>
+            <textarea id="execute-variables" rows="5" placeholder='{ "variable_name": "value" }'></textarea>
+        </div>
+        <button id="execute-submit-button">Execute</button>
+        <h4>Response:</h4>
+        <pre id="execute-response"></pre>
+    </div>
+</div>
+
+<style>
+    .button-like {
+        display: inline-block;
+        padding: 0.5em 1em;
+        background-color: #5cb85c;
+        color: white;
+        text-decoration: none;
+        border-radius: 4px;
+        margin-bottom: 1em;
+    }
+    .button-like:hover { background-color: #4cae4c; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+    th, td { border: 1px solid #ddd; padding: 0.75em; text-align: left; }
+    th { background-color: #f0f0f0; }
+    .actions a, .actions button { margin-right: 0.5em; text-decoration: none; color: #007bff; background: none; border: none; cursor: pointer; padding: 0.25em 0.5em;}
+    .actions button:hover, .actions a:hover { text-decoration: underline; }
+    .actions .delete-btn { color: red; }
+
+    /* Modal styles */
+    .modal { position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }
+    .modal-content { background-color: #fefefe; margin: 10% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 600px; border-radius: 8px; position: relative; }
+    .close-button { color: #aaa; float: right; font-size: 28px; font-weight: bold; }
+    .close-button:hover, .close-button:focus { color: black; text-decoration: none; cursor: pointer; }
+    #execute-modal textarea, #execute-modal input[type="number"] { width: calc(100% - 22px); padding: 0.75em; margin-bottom: 1em; border: 1px solid #ccc; border-radius: 4px; }
+    #execute-modal button { background-color: #007bff; color: white; padding: 0.75em 1.5em; border: none; border-radius: 4px; cursor: pointer; }
+</style>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    async function fetchAndDisplayPrompts() {
+        const tableBody = document.querySelector("#prompts-table tbody");
+        tableBody.innerHTML = '<tr><td colspan="4">Loading...</td></tr>'; // Clear previous and show loading
+        try {
+            const prompts = await makeApiCall('/prompts/', 'GET');
+            tableBody.innerHTML = ''; // Clear loading message
+            if (prompts.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="4">No prompts found. Create one!</td></tr>';
+                return;
+            }
+            prompts.forEach(prompt => {
+                const row = tableBody.insertRow();
+                row.innerHTML = `
+                    <td>${escapeHTML(prompt.name)}</td>
+                    <td>${escapeHTML(prompt.description || '')}</td>
+                    <td>${prompt.latest_version_number}</td>
+                    <td class="actions">
+                        <a href="/view/prompts/${prompt.id}">View</a> |
+                        <a href="/view/prompts/${prompt.id}/edit">Edit</a> |
+                        <button class="execute-btn" data-id="${prompt.id}" data-name="${escapeHTML(prompt.name)}">Execute</button> |
+                        <button class="delete-btn" data-id="${prompt.id}">Delete</button>
+                    </td>
+                `;
+            });
+            addEventListeners();
+        } catch (error) {
+            displayMessage('Failed to load prompts: ' + error.message);
+            tableBody.innerHTML = '<tr><td colspan="4">Error loading prompts.</td></tr>';
+        }
+    }
+
+    function escapeHTML(str) {
+        if (str === null || str === undefined) return '';
+        return String(str).replace(/[&<>"']/g, function (match) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[match];
+        });
+    }
+
+    function addEventListeners() {
+        // Delete buttons
+        document.querySelectorAll('.delete-btn').forEach(button => {
+            button.addEventListener('click', async function() {
+                const promptId = this.dataset.id;
+                if (confirm('Are you sure you want to delete this prompt?')) {
+                    try {
+                        await makeApiCall(`/prompts/${promptId}`, 'DELETE');
+                        displayMessage('Prompt deleted successfully.', 'success');
+                        fetchAndDisplayPrompts(); // Refresh list
+                    } catch (error) {
+                        displayMessage('Failed to delete prompt: ' + error.message);
+                    }
+                }
+            });
+        });
+
+        // Execute buttons
+        document.querySelectorAll('.execute-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                const promptId = this.dataset.id;
+                const promptName = this.dataset.name;
+                document.getElementById('execute-prompt-id').value = promptId;
+                document.getElementById('execute-prompt-name').textContent = promptName;
+                document.getElementById('execute-response').textContent = '';
+                document.getElementById('execute-variables').value = '';
+                document.getElementById('execute-version').value = '';
+                openModal('execute-modal');
+            });
+        });
+    }
+
+    function openModal(modalId) {
+        document.getElementById(modalId).style.display = 'block';
+    }
+
+    function closeModal(modalId) {
+        document.getElementById(modalId).style.display = 'none';
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const token = getToken();
+        if (!token) {
+            window.location.href = '/view/login';
+            return;
+        }
+        fetchAndDisplayPrompts();
+
+        // Execute Modal Submit
+        const executeSubmitButton = document.getElementById('execute-submit-button');
+        executeSubmitButton.addEventListener('click', async function() {
+            const promptId = document.getElementById('execute-prompt-id').value;
+            const variablesStr = document.getElementById('execute-variables').value;
+            const versionStr = document.getElementById('execute-version').value;
+            let variables = {};
+            const responseContainer = document.getElementById('execute-response');
+
+            try {
+                if (variablesStr.trim() !== "") {
+                    variables = JSON.parse(variablesStr);
+                }
+            } catch (e) {
+                responseContainer.textContent = 'Error: Invalid JSON in variables: ' + e.message;
+                return;
+            }
+
+            const payload = { variables };
+            if (versionStr.trim() !== "") {
+                payload.version_number = parseInt(versionStr, 10);
+                if (isNaN(payload.version_number)) {
+                     responseContainer.textContent = 'Error: Invalid version number.';
+                     return;
+                }
+            }
+
+            responseContainer.textContent = 'Executing...';
+            try {
+                const result = await makeApiCall(`/prompts/${promptId}/execute`, 'POST', payload);
+                // Assuming the response from /execute is now {"openai_response": "actual text"}
+                responseContainer.textContent = JSON.stringify(result, null, 2);
+            } catch (error) {
+                responseContainer.textContent = 'Execution failed: ' + error.message;
+            }
+        });
+
+        // Close modal if clicked outside content (optional)
+        window.onclick = function(event) {
+            const modal = document.getElementById('execute-modal');
+            if (event.target == modal) {
+                closeModal('execute-modal');
+            }
+        }
+    });
+</script>
+{% endblock %}

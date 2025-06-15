@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block title %}<span id="form-title-action">Create</span> Prompt - Prompt Pilot{% endblock %}
+
+{% block content %}
+<h2 id="form-h2-action">Create New Prompt</h2>
+<div id="message-container"></div>
+<form id="prompt-form">
+    <input type="hidden" id="prompt-id" name="prompt-id">
+    <div>
+        <label for="name">Prompt Name:</label>
+        <input type="text" id="name" name="name" required>
+    </div>
+    <div>
+        <label for="description">Description (Optional):</label>
+        <textarea id="description" name="description" rows="3"></textarea>
+    </div>
+    <div>
+        <label for="prompt_text">Prompt Text:</label>
+        <p class="form-hint" id="prompt-text-hint">
+            Enter the initial text for this prompt. If editing, providing text here will create a new version.
+            To only update name/description, leave this blank when editing.
+        </p>
+        <textarea id="prompt_text" name="prompt_text" rows="10"></textarea>
+    </div>
+    <button type="submit" id="submit-button">Save Prompt</button>
+</form>
+<p><a href="/view/prompts">&laquo; Back to Prompts List</a></p>
+
+<style>
+    textarea { width: calc(100% - 22px); padding: 0.75em; margin-bottom: 1em; border: 1px solid #ccc; border-radius: 4px; font-family: inherit; }
+    .form-hint { font-size: 0.9em; color: #666; margin-top: -0.5em; margin-bottom: 0.5em; }
+</style>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    document.addEventListener('DOMContentLoaded', async function() {
+        const token = getToken();
+        if (!token) {
+            window.location.href = '/view/login';
+            return;
+        }
+
+        const form = document.getElementById('prompt-form');
+        const promptIdInput = document.getElementById('prompt-id');
+        const nameInput = document.getElementById('name');
+        const descriptionInput = document.getElementById('description');
+        const promptTextInput = document.getElementById('prompt_text');
+        const titleAction = document.getElementById('form-title-action');
+        const h2Action = document.getElementById('form-h2-action');
+        const submitButton = document.getElementById('submit-button');
+        const promptTextHint = document.getElementById('prompt-text-hint');
+
+        const pathParts = window.location.pathname.split('/');
+        const isEditMode = pathParts.includes('edit') && pathParts.length > pathParts.indexOf('edit') + 1;
+        let existingPromptId = null;
+
+        if (isEditMode) {
+            existingPromptId = pathParts[pathParts.indexOf('edit') - 1];
+            promptIdInput.value = existingPromptId;
+            titleAction.textContent = 'Edit';
+            h2Action.textContent = 'Edit Prompt';
+            submitButton.textContent = 'Update Prompt';
+            promptTextHint.textContent = 'Enter new text to create a new version. To only update name/description, leave this blank.';
+            promptTextInput.placeholder = "Leave blank to keep existing versions and only update name/description. Fill to create a new version.";
+
+
+            try {
+                const promptData = await makeApiCall(`/prompts/${existingPromptId}`, 'GET');
+                nameInput.value = promptData.name;
+                descriptionInput.value = promptData.description || '';
+                // Do NOT pre-fill prompt_text for edit, as it's for a NEW version.
+                // To view current/past versions, user should go to prompt_detail page.
+            } catch (error) {
+                displayMessage('Failed to load prompt data for editing: ' + error.message);
+            }
+        } else {
+            titleAction.textContent = 'Create';
+            h2Action.textContent = 'Create New Prompt';
+            submitButton.textContent = 'Create Prompt';
+            promptTextInput.required = true; // Text is required for new prompts
+        }
+
+        form.addEventListener('submit', async function(event) {
+            event.preventDefault();
+
+            const name = nameInput.value;
+            const description = descriptionInput.value;
+            const prompt_text = promptTextInput.value;
+
+            const payload = { name, description };
+            if (prompt_text.trim() !== "") { // Only include prompt_text if provided
+                payload.prompt_text = prompt_text;
+            } else if (!isEditMode) { // If creating, prompt_text is required
+                 displayMessage('Prompt text is required to create a new prompt.');
+                 return;
+            }
+
+
+            try {
+                if (isEditMode) {
+                    await makeApiCall(`/prompts/${existingPromptId}`, 'PUT', payload);
+                    displayMessage('Prompt updated successfully!', 'success');
+                    // Optionally redirect after a delay or keep on page
+                    setTimeout(() => { window.location.href = '/view/prompts'; }, 1500);
+                } else {
+                    const newPrompt = await makeApiCall('/prompts/', 'POST', payload);
+                    displayMessage('Prompt created successfully!', 'success');
+                     setTimeout(() => { window.location.href = '/view/prompts'; }, 1500);
+                }
+            } catch (error) {
+                displayMessage('Error saving prompt: ' + error.message);
+            }
+        });
+    });
+</script>
+{% endblock %}

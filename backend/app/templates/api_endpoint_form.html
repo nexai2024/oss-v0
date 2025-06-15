@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}<span id="form-title-action">Create</span> API Endpoint - Prompt Pilot{% endblock %}
+
+{% block content %}
+<h2 id="form-h2-action">Create New API Endpoint</h2>
+<div id="message-container"></div>
+<form id="endpoint-form">
+    <input type="hidden" id="endpoint-id" name="endpoint-id">
+    <div>
+        <label for="name">Endpoint Name:</label>
+        <input type="text" id="name" name="name" required>
+    </div>
+    <div>
+        <label for="description">Description (Optional):</label>
+        <textarea id="description" name="description" rows="3"></textarea>
+    </div>
+    <div>
+        <label for="path">Path:</label>
+        <input type="text" id="path" name="path" placeholder="/my-custom-api" required>
+        <p class="form-hint">User-defined path for your API, e.g., /summarize. It will be unique per user.</p>
+    </div>
+    <div>
+        <label for="mapped_prompt_id">Mapped Prompt:</label>
+        <select id="mapped_prompt_id" name="mapped_prompt_id" required></select>
+        <p class="form-hint">Select which of your prompts this endpoint will execute.</p>
+    </div>
+    <div>
+        <label for="mapped_prompt_version">Mapped Prompt Version (Optional):</label>
+        <input type="number" id="mapped_prompt_version" name="mapped_prompt_version" placeholder="Leave blank for latest">
+        <p class="form-hint">Specify a version number, or leave blank to always use the latest version of the selected prompt.</p>
+    </div>
+     <div>
+        <label for="ai_model_name">AI Model Name (Optional):</label>
+        <input type="text" id="ai_model_name" name="ai_model_name" placeholder="gpt-3.5-turbo">
+        <p class="form-hint">Specify the AI model (e.g., gpt-4, gpt-3.5-turbo). Defaults to gpt-3.5-turbo if blank.</p>
+    </div>
+    <div>
+        <label for="is_active">
+            <input type="checkbox" id="is_active" name="is_active" checked>
+            Is Active
+        </label>
+        <p class="form-hint">Inactive endpoints cannot be called.</p>
+    </div>
+    <button type="submit" id="submit-button">Save API Endpoint</button>
+</form>
+<p><a href="/view/endpoints">&laquo; Back to API Endpoints List</a></p>
+
+<style>
+    textarea, select { width: calc(100% - 22px); padding: 0.75em; margin-bottom: 1em; border: 1px solid #ccc; border-radius: 4px; font-family: inherit; }
+    input[type="checkbox"] { width: auto; margin-right: 0.5em; vertical-align: middle; }
+    .form-hint { font-size: 0.9em; color: #666; margin-top: -0.5em; margin-bottom: 0.5em; }
+</style>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    // escapeHTML function should be available from base.html
+
+    async function populatePromptsDropdown(selectedPromptId = null) {
+        const promptSelect = document.getElementById('mapped_prompt_id');
+        promptSelect.innerHTML = '<option value="">Loading prompts...</option>';
+        try {
+            const prompts = await makeApiCall('/prompts/', 'GET');
+            promptSelect.innerHTML = '<option value="">-- Select a Prompt --</option>';
+            if (prompts.length === 0) {
+                promptSelect.innerHTML = '<option value="">No prompts available. Create one first!</option>';
+                return;
+            }
+            prompts.forEach(prompt => {
+                const option = document.createElement('option');
+                option.value = prompt.id;
+                option.textContent = `${prompt.name} (ID: ${prompt.id}, Latest Version: ${prompt.latest_version_number})`;
+                if (selectedPromptId && prompt.id == selectedPromptId) {
+                    option.selected = true;
+                }
+                promptSelect.appendChild(option);
+            });
+        } catch (error) {
+            promptSelect.innerHTML = '<option value="">Error loading prompts</option>';
+            displayMessage('Failed to load prompts for selection: ' + error.message);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', async function() {
+        const token = getToken();
+        if (!token) {
+            window.location.href = '/view/login';
+            return;
+        }
+
+        const form = document.getElementById('endpoint-form');
+        const endpointIdInput = document.getElementById('endpoint-id');
+        const nameInput = document.getElementById('name');
+        const descriptionInput = document.getElementById('description');
+        const pathInput = document.getElementById('path');
+        const mappedPromptIdSelect = document.getElementById('mapped_prompt_id');
+        const mappedPromptVersionInput = document.getElementById('mapped_prompt_version');
+        const aiModelNameInput = document.getElementById('ai_model_name');
+        const isActiveCheckbox = document.getElementById('is_active');
+
+        const titleAction = document.getElementById('form-title-action');
+        const h2Action = document.getElementById('form-h2-action');
+        const submitButton = document.getElementById('submit-button');
+
+        const pathParts = window.location.pathname.split('/');
+        const isEditMode = pathParts.includes('edit') && pathParts.length > pathParts.indexOf('edit') + 1;
+        let existingEndpointId = null;
+
+        if (isEditMode) {
+            existingEndpointId = pathParts[pathParts.indexOf('edit') - 1];
+            endpointIdInput.value = existingEndpointId;
+            titleAction.textContent = 'Edit';
+            h2Action.textContent = 'Edit API Endpoint';
+            submitButton.textContent = 'Update API Endpoint';
+
+            try {
+                const endpointData = await makeApiCall(`/endpoints/${existingEndpointId}`, 'GET');
+                nameInput.value = endpointData.name;
+                descriptionInput.value = endpointData.description || '';
+                pathInput.value = endpointData.path;
+                await populatePromptsDropdown(endpointData.mapped_prompt_id); // Populate and select
+                if (endpointData.mapped_prompt_version !== null) {
+                    mappedPromptVersionInput.value = endpointData.mapped_prompt_version;
+                }
+                aiModelNameInput.value = endpointData.ai_model_name || 'gpt-3.5-turbo';
+                isActiveCheckbox.checked = endpointData.is_active;
+            } catch (error) {
+                displayMessage('Failed to load API endpoint data for editing: ' + error.message);
+                await populatePromptsDropdown(); // Populate dropdown even if endpoint fetch fails
+            }
+        } else {
+            titleAction.textContent = 'Create';
+            h2Action.textContent = 'Create New API Endpoint';
+            submitButton.textContent = 'Create API Endpoint';
+            aiModelNameInput.value = 'gpt-3.5-turbo'; // Default for new
+            await populatePromptsDropdown();
+        }
+
+        form.addEventListener('submit', async function(event) {
+            event.preventDefault();
+
+            const payload = {
+                name: nameInput.value,
+                description: descriptionInput.value,
+                path: pathInput.value,
+                mapped_prompt_id: parseInt(mappedPromptIdSelect.value),
+                ai_model_name: aiModelNameInput.value || "gpt-3.5-turbo", // Ensure default if empty
+                is_active: isActiveCheckbox.checked
+            };
+
+            if (mappedPromptVersionInput.value.trim() !== "") {
+                payload.mapped_prompt_version = parseInt(mappedPromptVersionInput.value);
+                 if (isNaN(payload.mapped_prompt_version)) {
+                    displayMessage('Invalid Mapped Prompt Version number.');
+                    return;
+                }
+            } else {
+                payload.mapped_prompt_version = null; // Explicitly send null if empty
+            }
+
+            if (isNaN(payload.mapped_prompt_id)) {
+                 displayMessage('Please select a Mapped Prompt.');
+                 return;
+            }
+
+            try {
+                if (isEditMode) {
+                    await makeApiCall(`/endpoints/${existingEndpointId}`, 'PUT', payload);
+                    displayMessage('API Endpoint updated successfully!', 'success');
+                } else {
+                    await makeApiCall('/endpoints/', 'POST', payload);
+                    displayMessage('API Endpoint created successfully!', 'success');
+                }
+                setTimeout(() => { window.location.href = '/view/endpoints'; }, 1500);
+            } catch (error) {
+                displayMessage('Error saving API Endpoint: ' + error.message);
+            }
+        });
+    });
+</script>
+{% endblock %}

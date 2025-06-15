@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block title %}My API Endpoints - Prompt Pilot{% endblock %}
+
+{% block content %}
+<h2>My API Endpoints</h2>
+<div id="message-container"></div>
+<a href="/view/endpoints/new" class="button-like">Create New API Endpoint</a>
+<table id="endpoints-table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Path</th>
+            <th>Mapped Prompt ID</th>
+            <th>Mapped Version</th>
+            <th>AI Model</th>
+            <th>Active</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        <!-- Endpoint rows will be inserted here by JavaScript -->
+    </tbody>
+</table>
+
+<!-- Modal for "Show How to Call" -->
+<div id="how-to-call-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <span class="close-button" onclick="closeModal('how-to-call-modal')">&times;</span>
+        <h3>How to Call: <span id="how-to-call-name"></span></h3>
+        <p><strong>Full URL (POST):</strong> <code id="how-to-call-url"></code></p>
+        <p><strong>Headers:</strong></p>
+        <pre class="code-block"><code>X-OpenAI-API-Key: YOUR_OPENAI_API_KEY_HERE
+Content-Type: application/json</code></pre>
+        <p><strong>Sample Body (JSON):</strong></p>
+        <pre class="code-block" id="how-to-call-sample-body"><code>{
+    "variables": {
+        "your_variable_name": "its_value"
+        /* Add other variables as defined in your prompt */
+    }
+}</code></pre>
+        <p><strong>Sample cURL command:</strong></p>
+        <pre class="code-block"><code id="how-to-call-curl"></code></pre>
+    </div>
+</div>
+
+<style>
+    .button-like {
+        display: inline-block;
+        padding: 0.5em 1em;
+        background-color: #5cb85c;
+        color: white;
+        text-decoration: none;
+        border-radius: 4px;
+        margin-bottom: 1em;
+    }
+    .button-like:hover { background-color: #4cae4c; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+    th, td { border: 1px solid #ddd; padding: 0.75em; text-align: left; }
+    th { background-color: #f0f0f0; }
+    .actions a, .actions button { margin-right: 0.5em; text-decoration: none; color: #007bff; background: none; border: none; cursor: pointer; padding: 0.25em 0.5em;}
+    .actions button:hover, .actions a:hover { text-decoration: underline; }
+    .actions .delete-btn { color: red; }
+
+    /* Modal styles from base.html are implicitly used, but can be overridden or extended */
+    .modal-content .code-block { background-color: #2d2d2d; color: #f0f0f0; padding: 1em; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; margin-top: 0.5em; font-family: monospace; }
+</style>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    // escapeHTML function should be available from base.html
+    // If not, re-declare it here or ensure base.html's script runs first.
+    // function escapeHTML(str) { ... }
+
+    async function fetchAndDisplayEndpoints() {
+        const tableBody = document.querySelector("#endpoints-table tbody");
+        tableBody.innerHTML = '<tr><td colspan="7">Loading...</td></tr>';
+        try {
+            const endpoints = await makeApiCall('/endpoints/', 'GET');
+            tableBody.innerHTML = '';
+            if (endpoints.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="7">No API endpoints found. Create one!</td></tr>';
+                return;
+            }
+            endpoints.forEach(ep => {
+                const row = tableBody.insertRow();
+                row.innerHTML = `
+                    <td>${escapeHTML(ep.name)}</td>
+                    <td>${escapeHTML(ep.path)}</td>
+                    <td>${ep.mapped_prompt_id}</td>
+                    <td>${ep.mapped_prompt_version !== null ? ep.mapped_prompt_version : 'Latest'}</td>
+                    <td>${escapeHTML(ep.ai_model_name || 'gpt-3.5-turbo')}</td>
+                    <td>${ep.is_active ? 'Yes' : 'No'}</td>
+                    <td class="actions">
+                        <a href="/view/endpoints/${ep.id}/edit">Edit</a> |
+                        <button class="how-to-call-btn" data-id="${ep.id}" data-name="${escapeHTML(ep.name)}" data-path="${escapeHTML(ep.path)}">How to Call</button> |
+                        <button class="delete-btn" data-id="${ep.id}">Delete</button>
+                    </td>
+                `;
+            });
+            addEventListeners();
+        } catch (error) {
+            displayMessage('Failed to load API endpoints: ' + error.message);
+            tableBody.innerHTML = '<tr><td colspan="7">Error loading API endpoints.</td></tr>';
+        }
+    }
+
+    function addEventListeners() {
+        // Delete buttons
+        document.querySelectorAll('.delete-btn').forEach(button => {
+            button.addEventListener('click', async function() {
+                const endpointId = this.dataset.id;
+                if (confirm('Are you sure you want to delete this API endpoint?')) {
+                    try {
+                        await makeApiCall(`/endpoints/${endpointId}`, 'DELETE');
+                        displayMessage('API Endpoint deleted successfully.', 'success');
+                        fetchAndDisplayEndpoints(); // Refresh list
+                    } catch (error) {
+                        displayMessage('Failed to delete API endpoint: ' + error.message);
+                    }
+                }
+            });
+        });
+
+        // How to Call buttons
+        document.querySelectorAll('.how-to-call-btn').forEach(button => {
+            button.addEventListener('click', async function() {
+                const endpointName = this.dataset.name;
+                const endpointPath = this.dataset.path;
+                const currentUser = await makeApiCall('/users/me', 'GET'); // Assuming /users/me is available
+                const username = currentUser.username;
+
+                const fullUrl = \`\${window.location.origin}/hosted/execute/u/\${username}\${endpointPath.startsWith('/') ? endpointPath : '/' + endpointPath}\`;
+
+                document.getElementById('how-to-call-name').textContent = endpointName;
+                document.getElementById('how-to-call-url').textContent = fullUrl;
+
+                const curlCommand = \`curl -X POST "\${fullUrl}" \\\n-H "X-OpenAI-API-Key: YOUR_OPENAI_API_KEY_HERE" \\\n-H "Content-Type: application/json" \\\n-d '{\n    "variables": {\n        "your_variable_name": "value"\n    }\n}'\`;
+                document.getElementById('how-to-call-curl').textContent = curlCommand;
+
+                // For sample body, ideally fetch prompt variables. For now, generic.
+                // document.getElementById('how-to-call-sample-body').textContent = ...;
+
+                openModal('how-to-call-modal');
+            });
+        });
+    }
+
+    function openModal(modalId) {
+        document.getElementById(modalId).style.display = 'block';
+    }
+
+    function closeModal(modalId) {
+        document.getElementById(modalId).style.display = 'none';
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const token = getToken();
+        if (!token) {
+            window.location.href = '/view/login';
+            return;
+        }
+        fetchAndDisplayEndpoints();
+
+        // Close modal if clicked outside content (optional)
+        window.onclick = function(event) {
+            const modal = document.getElementById('how-to-call-modal');
+            if (event.target == modal) {
+                closeModal('how-to-call-modal');
+            }
+        }
+    });
+</script>
+{% endblock %}

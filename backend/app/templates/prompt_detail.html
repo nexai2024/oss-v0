@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block title %}<span id="prompt-name-title">Prompt</span> Details - Prompt Pilot{% endblock %}
+
+{% block content %}
+<h2 id="prompt-name-h2">Prompt Details</h2>
+<div id="message-container"></div>
+
+<div class="prompt-meta">
+    <p><strong>Name:</strong> <span id="detail-name"></span></p>
+    <p><strong>Description:</strong> <span id="detail-description"></span></p>
+    <p><strong>Latest Version:</strong> <span id="detail-latest-version"></span></p>
+    <p><a id="edit-prompt-link" href="#">Edit this Prompt</a></p>
+</div>
+
+<h3>Versions</h3>
+<div id="versions-list">
+    <!-- Versions will be listed here -->
+</div>
+
+<h3>View/Execute Specific Version</h3>
+<div class="version-display">
+    <label for="version-selector">Select Version:</label>
+    <select id="version-selector"></select>
+    <pre id="selected-version-text" class="code-block"></pre>
+</div>
+
+<div id="execute-section">
+    <h4>Execute Selected Version (<span id="execute-version-number-display"></span>)</h4>
+    <input type="hidden" id="execute-prompt-id-detail">
+     <input type="hidden" id="execute-version-number-detail">
+    <div>
+        <label for="detail-execute-variables">Variables (JSON format):</label>
+        <textarea id="detail-execute-variables" rows="5" placeholder='{ "variable_name": "value" }'></textarea>
+    </div>
+    <button id="detail-execute-submit-button">Execute</button>
+    <h4>Response:</h4>
+    <pre id="detail-execute-response" class="code-block"></pre>
+</div>
+
+<style>
+    .prompt-meta { margin-bottom: 1.5em; padding-bottom: 1em; border-bottom: 1px solid #eee; }
+    .prompt-meta p { margin: 0.5em 0; }
+    #versions-list .version-item { padding: 0.75em; border: 1px solid #eee; margin-bottom: 0.5em; border-radius: 4px; background-color: #f9f9f9; }
+    #versions-list .version-item strong { font-size: 1.1em; }
+    .version-display { margin-top: 1.5em; margin-bottom: 1.5em; }
+    #version-selector { padding: 0.5em; margin-bottom: 0.5em; border-radius: 4px; }
+    .code-block { background-color: #eef; padding: 1em; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; max-height: 300px; overflow-y: auto; }
+    #execute-section textarea { width: calc(100% - 22px); padding: 0.75em; margin-bottom: 1em; border: 1px solid #ccc; border-radius: 4px; }
+    #execute-section button { background-color: #007bff; color: white; padding: 0.75em 1.5em; border: none; border-radius: 4px; cursor: pointer; }
+</style>
+
+<p><a href="/view/prompts">&laquo; Back to Prompts List</a></p>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    let currentPromptData = null; // To store the fetched prompt data
+
+    function displayPromptDetails(prompt) {
+        currentPromptData = prompt;
+        document.getElementById('prompt-name-title').textContent = prompt.name;
+        document.getElementById('prompt-name-h2').textContent = prompt.name;
+        document.getElementById('detail-name').textContent = prompt.name;
+        document.getElementById('detail-description').textContent = prompt.description || 'N/A';
+        document.getElementById('detail-latest-version').textContent = prompt.latest_version_number;
+        document.getElementById('edit-prompt-link').href = `/view/prompts/${prompt.id}/edit`;
+        document.getElementById('execute-prompt-id-detail').value = prompt.id;
+
+        const versionsList = document.getElementById('versions-list');
+        const versionSelector = document.getElementById('version-selector');
+        versionsList.innerHTML = '';
+        versionSelector.innerHTML = '';
+
+        if (prompt.versions && prompt.versions.length > 0) {
+            prompt.versions.sort((a, b) => b.version_number - a.version_number); // Show newest first
+
+            prompt.versions.forEach(v => {
+                const item = document.createElement('div');
+                item.classList.add('version-item');
+                item.innerHTML = `<strong>Version ${v.version_number}</strong> (Created: ${new Date(v.created_at).toLocaleString()})
+                                  <pre class="code-block">${escapeHTML(v.prompt_text)}</pre>`;
+                versionsList.appendChild(item);
+
+                const option = document.createElement('option');
+                option.value = v.version_number;
+                option.textContent = `Version ${v.version_number}`;
+                versionSelector.appendChild(option);
+            });
+            // Default selector to latest version
+            versionSelector.value = prompt.latest_version_number;
+            displaySelectedVersionText(); // Display its text
+        } else {
+            versionsList.innerHTML = '<p>No versions available for this prompt.</p>';
+        }
+    }
+
+    function displaySelectedVersionText() {
+        const selectedVersionNumber = document.getElementById('version-selector').value;
+        if (currentPromptData && currentPromptData.versions) {
+            const selectedVersion = currentPromptData.versions.find(v => v.version_number == selectedVersionNumber);
+            if (selectedVersion) {
+                document.getElementById('selected-version-text').textContent = selectedVersion.prompt_text;
+                document.getElementById('execute-version-number-display').textContent = selectedVersion.version_number;
+                document.getElementById('execute-version-number-detail').value = selectedVersion.version_number;
+
+            }
+        }
+    }
+
+    function escapeHTML(str) { // Re-define or ensure it's globally available from base.html if base.html loads first.
+        if (str === null || str === undefined) return '';
+        return String(str).replace(/[&<>"']/g, function (match) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[match];
+        });
+    }
+
+
+    document.addEventListener('DOMContentLoaded', async function() {
+        const token = getToken();
+        if (!token) {
+            window.location.href = '/view/login';
+            return;
+        }
+
+        const pathParts = window.location.pathname.split('/');
+        const promptId = pathParts[pathParts.length -1]; // Assumes /view/prompts/{id}
+
+        if (!promptId || isNaN(parseInt(promptId))) {
+            displayMessage("Invalid prompt ID in URL.");
+            return;
+        }
+
+        try {
+            // Fetch with a specific version (latest) to populate current_prompt_text correctly if needed,
+            // but PromptPublic now includes all versions anyway.
+            const promptData = await makeApiCall(`/prompts/${promptId}`, 'GET');
+            displayPromptDetails(promptData);
+        } catch (error) {
+            displayMessage('Failed to load prompt details: ' + error.message);
+        }
+
+        document.getElementById('version-selector').addEventListener('change', displaySelectedVersionText);
+
+        // Execute button on detail page
+        const detailExecuteButton = document.getElementById('detail-execute-submit-button');
+        detailExecuteButton.addEventListener('click', async function() {
+            const promptId = document.getElementById('execute-prompt-id-detail').value;
+            const versionToExecute = document.getElementById('execute-version-number-detail').value;
+            const variablesStr = document.getElementById('detail-execute-variables').value;
+            let variables = {};
+            const responseContainer = document.getElementById('detail-execute-response');
+
+            try {
+                if (variablesStr.trim() !== "") {
+                    variables = JSON.parse(variablesStr);
+                }
+            } catch (e) {
+                responseContainer.textContent = 'Error: Invalid JSON in variables: ' + e.message;
+                return;
+            }
+
+            const payload = { variables, version_number: parseInt(versionToExecute) };
+
+            responseContainer.textContent = 'Executing...';
+            try {
+                const result = await makeApiCall(`/prompts/${promptId}/execute`, 'POST', payload);
+                responseContainer.textContent = JSON.stringify(result, null, 2);
+            } catch (error) {
+                responseContainer.textContent = 'Execution failed: ' + error.message;
+            }
+        });
+    });
+</script>
+{% endblock %}
