@@ -71,3 +71,43 @@ class APIEndpointUpdate(BaseModel): # All fields optional for partial updates
 class APIEndpointInDB(APIEndpointBase): # Inherits ai_model_name from APIEndpointBase
     id: int
     owner_username: str
+
+# Models for Deployed API Access Keys (for user-created APIs)
+class DeployedAPIAccessKeyBase(BaseModel):
+    name: str
+    api_endpoint_id: Optional[int] = None # If None, key is valid for all user's endpoints
+
+class DeployedAPIAccessKeyCreate(DeployedAPIAccessKeyBase):
+    pass # No extra fields needed for creation request from user
+
+class DeployedAPIAccessKeyInDB(DeployedAPIAccessKeyBase):
+    id: int
+    key_hash: str # Store the hash of the key, not the key itself
+    key_prefix: str # Store a few characters of the key for identification
+    owner_username: str
+    created_at: datetime
+    last_used_at: Optional[datetime] = None
+    is_active: bool = True
+
+# Models for API Call Logs
+class APICallLogBase(BaseModel):
+    deployed_api_key_id: int # Refers to DeployedAPIAccessKeyInDB.id
+    api_endpoint_id: int # Refers to APIEndpointInDB.id
+    owner_username: str # Denormalized for easier querying, but should match key & endpoint owner
+
+    # Information about the downstream AI call
+    downstream_ai_provider: Optional[str] = None # e.g., "OpenAI"
+    downstream_model_name: Optional[str] = None # e.g., "gpt-3.5-turbo"
+
+    # Response details from downstream
+    downstream_status_code: Optional[int] = None # e.g., 200 from OpenAI, or 500 if OpenAI call failed
+    downstream_error_message: Optional[str] = None # If there was an error from downstream
+
+    processing_duration_ms: Optional[float] = None # Time taken for the downstream call
+
+class APICallLogCreate(APICallLogBase):
+    pass
+
+class APICallLogInDB(APICallLogBase):
+    id: int
+    timestamp: datetime # Time of the incoming call to Prompt Pilot hosted API

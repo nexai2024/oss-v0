@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  backend:
+    build: . # Build from Dockerfile in the current directory (project root)
+    ports:
+      - "8000:8000" # Map host port 8000 to container port 8000
+    volumes:
+      - ./backend:/app/backend # Mount local './backend' to '/app/backend' in container
+                               # This allows for live reloading during development.
+    command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload # Use --reload for development
+    # The working directory in the Dockerfile is /app.
+    # The backend code is copied to /app/backend.
+    # So, uvicorn should find 'backend.app.main:app'.
+    # The volume mount ensures that changes in your local ./backend directory
+    # are reflected inside the container at /app/backend.
+    # --reload will watch for changes in this mounted directory.
+    environment:
+      # Example of an environment variable, if needed by the app
+      # - APP_ENV=development
+      pass # No specific env vars needed by the app for now
+
+    # If you had a database service, you might define it here:
+    # db:
+    #   image: postgres:13
+    #   volumes:
+    #     - postgres_data:/var/lib/postgresql/data/
+    #   environment:
+    #     - POSTGRES_USER=user
+    #     - POSTGRES_PASSWORD=password
+    #     - POSTGRES_DB=mydb
+    #   ports:
+    #     - "5432:5432"
+
+# volumes: # Define named volumes if used (e.g., for database persistence)
+#   postgres_data:

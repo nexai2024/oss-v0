@@ -47,6 +47,46 @@ class PromptVersionPublic(PromptVersionBase):
     class Config:
         orm_mode = True
 
+# Schemas for Deployed API Access Keys
+class DeployedAPIAccessKeyBaseSchema(BaseModel): # For consistency with other schemas
+    name: str
+    api_endpoint_id: Optional[int] = None
+
+class DeployedAPIAccessKeyCreate(DeployedAPIAccessKeyBaseSchema): # User provides these
+    pass
+
+class DeployedAPIAccessKeyPublic(DeployedAPIAccessKeyBaseSchema):
+    id: int
+    key_prefix: str
+    owner_username: str
+    created_at: datetime
+    last_used_at: Optional[datetime] = None
+    is_active: bool
+
+    class Config:
+        orm_mode = True
+
+class NewDeployedAPIAccessKey(DeployedAPIAccessKeyPublic): # For response when a new key is created
+    full_key: str # The actual key, shown only once
+
+# Schemas for API Call Logs
+class APICallLogBaseSchema(BaseModel): # Mirrors model.APICallLogBase
+    deployed_api_key_id: int
+    api_endpoint_id: int
+    owner_username: str
+    downstream_ai_provider: Optional[str] = None
+    downstream_model_name: Optional[str] = None
+    downstream_status_code: Optional[int] = None
+    downstream_error_message: Optional[str] = None
+    processing_duration_ms: Optional[float] = None
+
+class APICallLogPublic(APICallLogBaseSchema): # Mirrors model.APICallLogInDB
+    id: int
+    timestamp: datetime
+
+    class Config:
+        orm_mode = True
+
 class PromptBasePublic(BaseModel): # Base for PromptPublic, containing common fields
     id: int
     owner_username: str

@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block title %}API Call Logs - Prompt Pilot{% endblock %}
+
+{% block content %}
+<h2>API Call Logs</h2>
+<div id="message-container"></div>
+
+<div class="filter-section">
+    <label for="endpoint-filter">Filter by API Endpoint:</label>
+    <select id="endpoint-filter">
+        <option value="">All My Endpoints</option>
+        <!-- Options populated by JS -->
+    </select>
+    <button id="fetch-logs-btn" class="button-like">Fetch Logs</button>
+</div>
+
+<table id="logs-table">
+    <thead>
+        <tr>
+            <th>Timestamp</th>
+            <th>Endpoint ID</th>
+            <th>Key ID</th>
+            <th>Provider</th>
+            <th>Model</th>
+            <th>Status</th>
+            <th>Error</th>
+            <th>Duration (ms)</th>
+        </tr>
+    </thead>
+    <tbody>
+        <!-- Log rows will be inserted here by JavaScript -->
+    </tbody>
+</table>
+
+<div class="pagination-controls">
+    <button id="prev-page-btn" disabled>Previous</button>
+    <span id="page-info">Page 1</span>
+    <button id="next-page-btn">Next</button>
+</div>
+
+<style>
+    .filter-section { margin-bottom: 1.5em; padding: 1em; border: 1px solid #eee; background-color: #f9f9f9; border-radius: 4px; }
+    .filter-section label { margin-right: 0.5em; }
+    .filter-section select { padding: 0.5em; border-radius: 4px; margin-right: 1em; }
+    .button-like { /* Ensure this style is available or redefine */
+        padding: 0.5em 1em; background-color: #007bff; color: white; text-decoration: none;
+        border-radius: 4px; border: none; cursor: pointer;
+    }
+    .button-like:hover { background-color: #0056b3; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+    th, td { border: 1px solid #ddd; padding: 0.75em; text-align: left; font-size: 0.9em; }
+    th { background-color: #f0f0f0; }
+    td.error-message { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help; }
+    .pagination-controls { margin-top: 1em; text-align: center; }
+    .pagination-controls button { padding: 0.5em 1em; margin: 0 0.5em; }
+</style>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    let currentPage = 1;
+    const logsPerPage = 20; // Or make this configurable
+
+    async function populateEndpointFilter() {
+        const select = document.getElementById('endpoint-filter');
+        try {
+            const endpoints = await makeApiCall('/endpoints/', 'GET');
+            if (endpoints.length > 0) {
+                endpoints.forEach(ep => {
+                    const option = document.createElement('option');
+                    option.value = ep.id;
+                    option.textContent = `${ep.name} (ID: ${ep.id})`;
+                    select.appendChild(option);
+                });
+            }
+             // Check for query param to pre-select filter
+            const urlParams = new URLSearchParams(window.location.search);
+            const endpointIdFromQuery = urlParams.get('endpoint_id');
+            if (endpointIdFromQuery) {
+                select.value = endpointIdFromQuery;
+            }
+
+        } catch (error) {
+            displayMessage('Failed to load API endpoints for filter: ' + error.message);
+        }
+    }
+
+    async function fetchAndDisplayLogs() {
+        const tableBody = document.querySelector("#logs-table tbody");
+        const selectedEndpointId = document.getElementById('endpoint-filter').value;
+        const pageInfo = document.getElementById('page-info');
+        const prevBtn = document.getElementById('prev-page-btn');
+        const nextBtn = document.getElementById('next-page-btn');
+
+        let url = '/call-logs/';
+        if (selectedEndpointId) {
+            url = `/call-logs/endpoint/${selectedEndpointId}`;
+        }
+        url += `?limit=${logsPerPage}&offset=${(currentPage - 1) * logsPerPage}`;
+
+        tableBody.innerHTML = \`<tr><td colspan="8">Loading logs...</td></tr>\`;
+        try {
+            const logs = await makeApiCall(url, 'GET');
+            tableBody.innerHTML = '';
+            if (logs.length === 0) {
+                tableBody.innerHTML = \`<tr><td colspan="8">No logs found for the current filter on this page.</td></tr>\`;
+            } else {
+                logs.forEach(log => {
+                    const row = tableBody.insertRow();
+                    row.innerHTML = \`
+                        <td>\${new Date(log.timestamp).toLocaleString()}</td>
+                        <td>\${log.api_endpoint_id}</td>
+                        <td>\${log.deployed_api_key_id}</td>
+                        <td>\${escapeHTML(log.downstream_ai_provider || 'N/A')}</td>
+                        <td>\${escapeHTML(log.downstream_model_name || 'N/A')}</td>
+                        <td>\${log.downstream_status_code !== null ? log.downstream_status_code : 'N/A'}</td>
+                        <td class="error-message" title="\${escapeHTML(log.downstream_error_message || '')}">\${escapeHTML(log.downstream_error_message || 'None')}</td>
+                        <td>\${log.processing_duration_ms !== null ? log.processing_duration_ms.toFixed(2) : 'N/A'}</td>
+                    \`;
+                });
+            }
+            pageInfo.textContent = \`Page \${currentPage}\`;
+            prevBtn.disabled = currentPage === 1;
+            nextBtn.disabled = logs.length < logsPerPage; // Disable next if fewer logs than page limit were returned
+
+        } catch (error) {
+            displayMessage('Failed to load API call logs: ' + error.message);
+            tableBody.innerHTML = \`<tr><td colspan="8">Error loading logs.</td></tr>\`;
+            prevBtn.disabled = true;
+            nextBtn.disabled = true;
+        }
+    }
+
+    // escapeHTML should be available from base.html
+    // function escapeHTML(str) { ... }
+
+    document.addEventListener('DOMContentLoaded', async function() {
+        const token = getToken();
+        if (!token) {
+            window.location.href = '/view/login';
+            return;
+        }
+
+        await populateEndpointFilter(); // Wait for filter to populate before initial fetch
+        fetchAndDisplayLogs(); // Initial fetch
+
+        document.getElementById('fetch-logs-btn').addEventListener('click', () => {
+            currentPage = 1; // Reset to first page on new filter
+            fetchAndDisplayLogs();
+        });
+
+        document.getElementById('prev-page-btn').addEventListener('click', () => {
+            if (currentPage > 1) {
+                currentPage--;
+                fetchAndDisplayLogs();
+            }
+        });
+
+        document.getElementById('next-page-btn').addEventListener('click', () => {
+            currentPage++;
+            fetchAndDisplayLogs();
+        });
+    });
+</script>
+{% endblock %}

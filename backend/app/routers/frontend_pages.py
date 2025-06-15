@@ -71,6 +71,14 @@ async def api_endpoint_edit_page(request: Request, endpoint_id: int):
 
 # Skipping dedicated detail page for API endpoints for now.
 
+@router.get("/api-access-keys")
+async def api_access_keys_page(request: Request):
+    return templates.TemplateResponse("api_access_keys.html", {"request": request})
+
+@router.get("/logs")
+async def api_call_logs_page(request: Request): # endpoint_id can be passed as query param
+    return templates.TemplateResponse("api_call_logs.html", {"request": request})
+
 # A root redirect for the whole app, if desired, would be in main.py
 # For example, GET "/" redirects to "/view/login"
 # This router only handles routes under its own prefix "/view"

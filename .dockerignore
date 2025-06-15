@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+pip-wheel-metadata/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# GitHub
+.github/
+
+# IDE / Editor specific
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Docker
+# Avoid including docker specific files if they are not needed in the image context itself.
+# Dockerfile # Usually fine to include, but can be excluded if part of a multi-stage build where it's not needed in the final stage.
+# docker-compose.yml
+
+# Other
+*.log
+*.tmp
+*.bak
+*.cache
+# Add any other files or directories that should not be included in the Docker image
+# For example, if you have a top-level 'tests' directory that's large and not needed for runtime:
+# /tests/
+# Or specific large data files:
+# /data_files_for_testing/

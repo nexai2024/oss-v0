@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse
 
-from .routers import auth, users, prompts, api_endpoints, hosted_apis, frontend_pages # Import frontend_pages
+from .routers import auth, users, prompts, api_endpoints, hosted_apis, frontend_pages, user_api_keys, api_call_logs # Import api_call_logs
 
 app = FastAPI(title="Prompt Pilot API")
 
@@ -23,6 +23,8 @@ app.include_router(api_endpoints.router)
 # Include the router for dynamically hosted APIs
 # This should generally be one of the last routers included if it has very broad path parameters
 app.include_router(hosted_apis.router)
+app.include_router(user_api_keys.router)
+app.include_router(api_call_logs.router) # Add the new router
 
 # Include frontend pages router
 # Prefix is defined within frontend_pages.py router itself as "/view"

@@ -59,3 +59,30 @@ async def get_current_active_user(current_user: models.UserInDB = Depends(get_cu
     # if not current_user.is_active: # Assuming an is_active field in UserInDB or fetched User model
     #     raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
+
+# --- API Key Utilities ---
+import secrets
+import hashlib
+
+def generate_api_key(length: int = 32) -> str:
+    """Generates a secure random string for the API key."""
+    # Generates a key like "ppk_xxxxxxxx..." (Prompt Pilot Key)
+    # The actual random part will be `length` hex characters (length*2 in final string if using hex)
+    # For simplicity, let's use base64 encoding which is more compact.
+    # A 32-byte random string will be 44 chars in base64. Let's aim for around 40-50 char total.
+    # prefix + 32 random bytes base64 encoded
+    # secrets.token_urlsafe(n) generates n random bytes.
+    return "ppk_" + secrets.token_urlsafe(32) # Results in "ppk_" + 43 chars = 47 total
+
+def hash_api_key(api_key: str) -> str:
+    """Hashes the API key using SHA256."""
+    # This is for verification. We store the hash and compare the hash of the incoming key.
+    return hashlib.sha256(api_key.encode()).hexdigest()
+
+def get_key_prefix(api_key: str, length: int = 8) -> str:
+    """Returns the first few characters of the key after the 'ppk_' part."""
+    if api_key.startswith("ppk_") and len(api_key) > (4 + length) :
+        return api_key[4 : 4 + length] # Return 8 chars after "ppk_"
+    elif len(api_key) > length:
+        return api_key[:length] # Fallback if no "ppk_" prefix
+    return api_key[:length] # Fallback for very short keys (should not happen with generation)

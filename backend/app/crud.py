@@ -245,3 +245,123 @@ def delete_api_endpoint(endpoint_id: int, owner_username: str) -> bool:
         return False
     fake_api_endpoints_db.remove(db_endpoint)
     return True
+
+# --- Deployed API Access Key CRUD ---
+fake_deployed_api_keys_db: List[models.DeployedAPIAccessKeyInDB] = []
+deployed_api_key_id_counter = 1
+
+def create_deployed_api_key(
+    key_data: schemas.DeployedAPIAccessKeyCreate, # Use schema for input
+    owner_username: str,
+    full_key: str, # Not stored directly, but passed for context if needed elsewhere
+    key_hash: str,
+    key_prefix: str,
+    api_endpoints_crud_module # To validate api_endpoint_id
+) -> models.DeployedAPIAccessKeyInDB:
+    global deployed_api_key_id_counter
+
+    if key_data.api_endpoint_id is not None:
+        endpoint = api_endpoints_crud_module.get_api_endpoint_by_id(key_data.api_endpoint_id)
+        if not endpoint:
+            raise HTTPException(status_code=404, detail=f"API Endpoint with ID {key_data.api_endpoint_id} not found.")
+        if endpoint.owner_username != owner_username:
+            raise HTTPException(status_code=403, detail="Cannot create key for an API Endpoint you do not own.")
+
+    db_key = models.DeployedAPIAccessKeyInDB(
+        id=deployed_api_key_id_counter,
+        name=key_data.name,
+        api_endpoint_id=key_data.api_endpoint_id,
+        owner_username=owner_username,
+        key_hash=key_hash,
+        key_prefix=key_prefix,
+        created_at=datetime.now(timezone.utc),
+        is_active=True
+    )
+    fake_deployed_api_keys_db.append(db_key)
+    deployed_api_key_id_counter += 1
+    return db_key
+
+def get_deployed_api_key_by_hash(key_hash: str) -> Optional[models.DeployedAPIAccessKeyInDB]:
+    for key_in_db in fake_deployed_api_keys_db:
+        if key_in_db.key_hash == key_hash:
+            return key_in_db
+    return None
+
+def get_active_deployed_api_key_for_user_and_endpoint(
+    key_hash: str,
+    requesting_owner_username: str, # The username from the /u/{username}/ part of the URL
+    target_api_endpoint_id: int # The ID of the endpoint being called
+) -> Optional[models.DeployedAPIAccessKeyInDB]:
+    key_in_db = get_deployed_api_key_by_hash(key_hash)
+    if not key_in_db:
+        return None # Key doesn't exist
+
+    if not key_in_db.is_active:
+        return None # Key is not active
+
+    if key_in_db.owner_username != requesting_owner_username:
+        # This check ensures the API key belongs to the user whose endpoint is being called.
+        # This is crucial if key_hash alone was globally unique but we want to scope its use.
+        return None
+
+    # Check if the key is authorized for the specific endpoint
+    if key_in_db.api_endpoint_id is not None and key_in_db.api_endpoint_id != target_api_endpoint_id:
+        return None # Key is for a specific different endpoint
+
+    return key_in_db
+
+
+def get_deployed_api_keys_by_owner(owner_username: str) -> List[models.DeployedAPIAccessKeyInDB]:
+    return [key for key in fake_deployed_api_keys_db if key.owner_username == owner_username]
+
+def deactivate_deployed_api_key(key_id: int, owner_username: str) -> bool:
+    for key_in_db in fake_deployed_api_keys_db:
+        if key_in_db.id == key_id and key_in_db.owner_username == owner_username:
+            key_in_db.is_active = False
+            # key_in_db.updated_at = datetime.now(timezone.utc) # If we add updated_at
+            return True
+    return False
+
+def record_key_usage(key_id: int) -> None:
+    for key_in_db in fake_deployed_api_keys_db:
+        if key_in_db.id == key_id:
+            key_in_db.last_used_at = datetime.now(timezone.utc)
+            break
+
+# --- API Call Log CRUD ---
+fake_api_call_logs_db: List[models.APICallLogInDB] = []
+api_call_log_id_counter = 1
+
+def create_api_call_log(log_data: models.APICallLogCreate) -> models.APICallLogInDB: # Takes model type
+    global api_call_log_id_counter
+    db_log = models.APICallLogInDB(
+        id=api_call_log_id_counter,
+        timestamp=datetime.now(timezone.utc), # Log timestamp is now
+        **log_data.model_dump() # Spread fields from APICallLogCreate
+    )
+    fake_api_call_logs_db.append(db_log)
+    api_call_log_id_counter += 1
+    return db_log
+
+def get_api_call_logs_by_owner(
+    owner_username: str, limit: int = 100, offset: int = 0
+) -> List[models.APICallLogInDB]:
+    # Simple in-memory pagination and filtering
+    user_logs = [log for log in fake_api_call_logs_db if log.owner_username == owner_username]
+    # Sort by timestamp descending (newest first)
+    user_logs.sort(key=lambda x: x.timestamp, reverse=True)
+    return user_logs[offset : offset + limit]
+
+def get_api_call_logs_by_endpoint(
+    api_endpoint_id: int, owner_username: str, limit: int = 100, offset: int = 0
+) -> List[models.APICallLogInDB]:
+    # Ensure user owns the endpoint they are querying logs for (implicitly done if logs are correctly attributed)
+    # For direct queries, this check is good practice if logs weren't strictly owner-bound.
+    # Here, owner_username on the log itself is the primary filter.
+    endpoint_logs = [
+        log for log in fake_api_call_logs_db
+        if log.api_endpoint_id == api_endpoint_id and log.owner_username == owner_username
+    ]
+    # Sort by timestamp descending
+    endpoint_logs.sort(key=lambda x: x.timestamp, reverse=True)
+    return endpoint_logs[offset : offset + limit]

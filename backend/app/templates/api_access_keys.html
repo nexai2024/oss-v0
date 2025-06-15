@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+
+{% block title %}API Access Keys - Prompt Pilot{% endblock %}
+
+{% block content %}
+<h2>Manage API Access Keys</h2>
+<p>These keys are used to authenticate requests to your deployed API endpoints.</p>
+<div id="message-container"></div>
+
+<button id="show-generate-key-form-btn" class="button-like">Generate New API Key</button>
+
+<div id="generate-key-form-section" class="form-section" style="display:none; margin-top:1em; padding:1em; border:1px solid #eee; background-color:#f9f9f9;">
+    <h3>Generate New API Key</h3>
+    <form id="generate-key-form">
+        <div>
+            <label for="key-name">Key Name (for your reference):</label>
+            <input type="text" id="key-name" name="key-name" required>
+        </div>
+        <div>
+            <label for="key-api-endpoint-id">Target API Endpoint (Optional):</label>
+            <select id="key-api-endpoint-id" name="key-api-endpoint-id">
+                <option value="">All User Endpoints</option>
+                <!-- Options will be populated by JavaScript -->
+            </select>
+            <p class="form-hint">If no specific endpoint is selected, this key will be valid for all your API endpoints.</p>
+        </div>
+        <button type="submit">Generate Key</button>
+        <button type="button" id="cancel-generate-key-btn" style="background-color:#aaa; margin-left:10px;">Cancel</button>
+    </form>
+    <div id="new-key-display-section" style="display:none; margin-top:1em; padding:1em; border:1px solid #d4edda; background-color: #d4edda; color: #155724;">
+        <h4>New API Key Generated!</h4>
+        <p><strong>Please copy this key now. You will not be able to see it again.</strong></p>
+        <pre><code id="new-full-key" style="font-weight:bold; user-select:all; -webkit-user-select:all;"></code></pre>
+    </div>
+</div>
+
+<h3 style="margin-top:2em;">Your Existing API Keys</h3>
+<table id="api-keys-table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Prefix</th>
+            <th>Target Endpoint ID</th>
+            <th>Created At</th>
+            <th>Last Used At</th>
+            <th>Active</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        <!-- Key rows will be inserted here by JavaScript -->
+    </tbody>
+</table>
+
+<style>
+    .button-like { /* Shared style from other pages, ensure consistency or move to base.css */
+        display: inline-block; padding: 0.5em 1em; background-color: #5cb85c; color: white;
+        text-decoration: none; border-radius: 4px; margin-bottom: 1em; border: none; cursor: pointer;
+    }
+    .button-like:hover { background-color: #4cae4c; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+    th, td { border: 1px solid #ddd; padding: 0.75em; text-align: left; }
+    th { background-color: #f0f0f0; }
+    .actions button { margin-right: 0.5em; text-decoration: none; color: #007bff; background: none; border: none; cursor: pointer; padding: 0.25em 0.5em;}
+    .actions button:hover { text-decoration: underline; }
+    .actions .deactivate-btn { color: red; }
+    .form-section label, .form-section input, .form-section select, .form-section button { margin-bottom: 0.8em; }
+    .form-hint { font-size: 0.9em; color: #666; margin-top: -0.5em; margin-bottom: 0.5em; }
+    #new-full-key { display: inline-block; padding: 0.5em; background-color: #fff; border: 1px dashed #333; }
+</style>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    // escapeHTML function should be available from base.html or defined here
+    // function escapeHTML(str) { ... }
+
+    async function fetchAndDisplayApiKeys() {
+        const tableBody = document.querySelector("#api-keys-table tbody");
+        tableBody.innerHTML = '<tr><td colspan="7">Loading...</td></tr>';
+        try {
+            const keys = await makeApiCall('/user/api-keys/', 'GET');
+            tableBody.innerHTML = '';
+            if (keys.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="7">No API access keys found. Generate one!</td></tr>';
+                return;
+            }
+            keys.forEach(key => {
+                const row = tableBody.insertRow();
+                row.innerHTML = `
+                    <td>${escapeHTML(key.name)}</td>
+                    <td>${escapeHTML(key.key_prefix)}...</td>
+                    <td>${key.api_endpoint_id !== null ? key.api_endpoint_id : 'All Endpoints'}</td>
+                    <td>${new Date(key.created_at).toLocaleString()}</td>
+                    <td>${key.last_used_at ? new Date(key.last_used_at).toLocaleString() : 'Never'}</td>
+                    <td>${key.is_active ? 'Yes' : 'No'}</td>
+                    <td class="actions">
+                        ${key.is_active ? `<button class="deactivate-btn" data-id="${key.id}">Deactivate</button>` : 'Inactive'}
+                    </td>
+                `;
+            });
+            addKeyActionListeners();
+        } catch (error) {
+            displayMessage('Failed to load API keys: ' + error.message);
+            tableBody.innerHTML = '<tr><td colspan="7">Error loading API keys.</td></tr>';
+        }
+    }
+
+    async function populateApiEndpointsDropdown() {
+        const endpointSelect = document.getElementById('key-api-endpoint-id');
+        endpointSelect.innerHTML = '<option value="">Loading endpoints...</option>';
+        try {
+            const endpoints = await makeApiCall('/endpoints/', 'GET');
+            endpointSelect.innerHTML = '<option value="">All User Endpoints</option>'; // Default option
+            if (endpoints.length === 0) {
+                 // No problem, user might want a global key.
+            }
+            endpoints.forEach(ep => {
+                const option = document.createElement('option');
+                option.value = ep.id;
+                option.textContent = `${ep.name} (Path: ${ep.path})`;
+                endpointSelect.appendChild(option);
+            });
+        } catch (error) {
+            endpointSelect.innerHTML = '<option value="">Error loading endpoints</option>';
+            displayMessage('Failed to load API endpoints for selection: ' + error.message);
+        }
+    }
+
+    function addKeyActionListeners() {
+        document.querySelectorAll('.deactivate-btn').forEach(button => {
+            button.addEventListener('click', async function() {
+                const keyId = this.dataset.id;
+                if (confirm('Are you sure you want to deactivate this API key?')) {
+                    try {
+                        await makeApiCall(`/user/api-keys/${keyId}`, 'DELETE');
+                        displayMessage('API Key deactivated successfully.', 'success');
+                        fetchAndDisplayApiKeys(); // Refresh list
+                    } catch (error) {
+                        displayMessage('Failed to deactivate API key: ' + error.message);
+                    }
+                }
+            });
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const token = getToken();
+        if (!token) {
+            window.location.href = '/view/login';
+            return;
+        }
+        fetchAndDisplayApiKeys();
+        populateApiEndpointsDropdown(); // Populate dropdown on page load
+
+        const showFormBtn = document.getElementById('show-generate-key-form-btn');
+        const cancelBtn = document.getElementById('cancel-generate-key-btn');
+        const formSection = document.getElementById('generate-key-form-section');
+        const generateForm = document.getElementById('generate-key-form');
+        const newKeyDisplaySection = document.getElementById('new-key-display-section');
+        const newFullKeyElement = document.getElementById('new-full-key');
+
+        showFormBtn.addEventListener('click', () => {
+            formSection.style.display = 'block';
+            showFormBtn.style.display = 'none';
+            newKeyDisplaySection.style.display = 'none'; // Hide previous key if shown
+            generateForm.reset(); // Reset form for new entry
+        });
+
+        cancelBtn.addEventListener('click', () => {
+            formSection.style.display = 'none';
+            showFormBtn.style.display = 'inline-block';
+            newKeyDisplaySection.style.display = 'none';
+        });
+
+        generateForm.addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const keyName = document.getElementById('key-name').value;
+            const targetEndpointIdStr = document.getElementById('key-api-endpoint-id').value;
+
+            const payload = { name: keyName };
+            if (targetEndpointIdStr) {
+                payload.api_endpoint_id = parseInt(targetEndpointIdStr, 10);
+            } else {
+                payload.api_endpoint_id = null; // Explicitly set to null for "All Endpoints"
+            }
+
+            try {
+                const newKeyData = await makeApiCall('/user/api-keys/', 'POST', payload);
+                newFullKeyElement.textContent = newKeyData.full_key;
+                newKeyDisplaySection.style.display = 'block';
+                displayMessage('API Key generated successfully! Store it safely.', 'success');
+                fetchAndDisplayApiKeys(); // Refresh the list
+                formSection.style.display = 'none'; // Hide form, show main button again
+                showFormBtn.style.display = 'inline-block';
+
+            } catch (error) {
+                displayMessage('Failed to generate API key: ' + error.message, 'error', 'message-container'); // Ensure this message container exists
+                 newKeyDisplaySection.style.display = 'none';
+            }
+        });
+    });
+</script>
+{% endblock %}

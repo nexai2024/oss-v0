@@ -92,8 +92,15 @@ Content-Type: application/json</code></pre>
                     <td>${ep.mapped_prompt_version !== null ? ep.mapped_prompt_version : 'Latest'}</td>
                     <td>${escapeHTML(ep.ai_model_name || 'gpt-3.5-turbo')}</td>
                     <td>${ep.is_active ? 'Yes' : 'No'}</td>
+                    <td>${escapeHTML(ep.name)}</td>
+                    <td>${escapeHTML(ep.path)}</td>
+                    <td>${ep.mapped_prompt_id}</td>
+                    <td>${ep.mapped_prompt_version !== null ? ep.mapped_prompt_version : 'Latest'}</td>
+                    <td>${escapeHTML(ep.ai_model_name || 'gpt-3.5-turbo')}</td>
+                    <td>${ep.is_active ? 'Yes' : 'No'}</td>
                     <td class="actions">
                         <a href="/view/endpoints/${ep.id}/edit">Edit</a> |
+                        <a href="/view/logs?endpoint_id=${ep.id}">View Logs</a> |
                         <button class="how-to-call-btn" data-id="${ep.id}" data-name="${escapeHTML(ep.name)}" data-path="${escapeHTML(ep.path)}">How to Call</button> |
                         <button class="delete-btn" data-id="${ep.id}">Delete</button>
                     </td>

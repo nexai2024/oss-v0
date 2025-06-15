@@ -32,3 +32,39 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
+
+---
+
+## Prompt Pilot Backend
+
+This section pertains to the FastAPI backend for Prompt Pilot.
+
+### Running with Docker (Backend)
+
+To build and run the backend application using Docker Compose:
+
+1.  Ensure you have Docker and Docker Compose installed.
+2.  Navigate to the project root directory (where `Dockerfile` and `docker-compose.yml` are located).
+3.  Build the Docker image for the backend:
+    ```bash
+    docker-compose build backend
+    ```
+    (If you only have the backend service in your `docker-compose.yml`, `docker-compose build` is also fine.)
+4.  Run the backend application:
+    ```bash
+    docker-compose up backend
+    ```
+    (If you only have the backend service, `docker-compose up` is also fine.)
+
+The backend API will be available at [http://localhost:8000](http://localhost:8000).
+The UI pages served via Jinja2 by the backend will also be accessible (e.g., starting at [http://localhost:8000/view/login](http://localhost:8000/view/login)).
+
+To run in detached mode:
+```bash
+docker-compose up -d backend
+```
+
+To stop the service:
+```bash
+docker-compose down
+```
